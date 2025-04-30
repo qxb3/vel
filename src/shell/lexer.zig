@@ -95,7 +95,7 @@ pub const Lexer = struct {
             // Checks for words.
             if (
                 !std.ascii.isDigit(current_char) and   // Cannot start with a number.
-                self.is_identifier(current_char)       // Check if is alpha numeric.
+                self.is_word(current_char)       // Check if is alpha numeric.
             ) {
                 const identifier = try self.lex_word();
                 try tokens.append(identifier);
@@ -130,7 +130,7 @@ pub const Lexer = struct {
 
         while (self.has_next()) {
             const buffer_char = self.get_current_char();
-            if (!self.is_identifier(buffer_char)) break;
+            if (!self.is_word(buffer_char)) break;
 
             self.advance();
         }
@@ -278,7 +278,7 @@ pub const Lexer = struct {
     }
 
     /// A wrapper arround std.ascii.isAlphanumeric with some additional conditions.
-    fn is_identifier(self: *Lexer, char: u8) bool {
+    fn is_word(self: *Lexer, char: u8) bool {
         _ = self;
 
         return (
