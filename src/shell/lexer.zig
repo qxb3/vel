@@ -18,9 +18,15 @@ pub const TokenType = enum {
     CLOSE_BRACKET,      // ]
     SEMI,               // ;
     AMP,                // &
+    DOUBLE_AMP,         // &&
     PIPE,               // |
+    DOUBLE_PIPE,        // ||
     GTHAN,              // >
+    DOUBLE_GTHAN,       // >>
+    GTHAN_AMP,          // >&
     LTHAN,              // <
+    LTHAN_AMP,          // <&
+    DOUBLE_LTHAN,       // <<
 };
 
 pub const Token = union(TokenType) {
@@ -41,9 +47,15 @@ pub const Token = union(TokenType) {
     CLOSE_BRACKET,
     SEMI,
     AMP,
+    DOUBLE_AMP,
     PIPE,
+    DOUBLE_PIPE,
     GTHAN,
+    DOUBLE_GTHAN,
+    GTHAN_AMP,
     LTHAN,
+    LTHAN_AMP,
+    DOUBLE_LTHAN,
 };
 
 pub const LexerError = error {
@@ -82,13 +94,9 @@ pub const Lexer = struct {
 
             // Checks for identifiers.
             if (
-                (
-                 current_char != '-' and                // Cannot start with `-`.
-                 current_char != '.' and                // Cannot start with `.`
-                 !std.ascii.isDigit(current_char) and   // Cannot start with a number.
-                 self.is_identifier(current_char)       // Check if is alpha numeric.
-                ) or
-                current_char == '_'                     // Can start with `_`.
+                current_char != '-' and                // Cannot start with `-`.
+                !std.ascii.isDigit(current_char) and   // Cannot start with a number.
+                self.is_identifier(current_char)       // Check if is alpha numeric.
             ) {
                 const identifier = try self.lex_identifier();
                 try tokens.append(identifier);
@@ -147,7 +155,7 @@ pub const Lexer = struct {
 
         while (self.has_next()) {
             const buffer_char = self.get_current_char();
-            if (buffer_char != '-' and !self.is_identifier(buffer_char)) break;
+            if (!std.ascii.isAlphanumeric(buffer_char) and buffer_char != '-') break;
 
             self.advance();
         }
@@ -218,6 +226,17 @@ pub const Lexer = struct {
     fn lex_symbol(self: *Lexer) LexerError!Token {
         const current_char = self.get_current_char();
 
+        // Double char symbols.
+        if (self.peek()) |next_char| {
+            if (current_char == '&' and next_char == '&') return self.emit_double(Token.DOUBLE_AMP);
+            if (current_char == '|' and next_char == '|') return self.emit_double(Token.DOUBLE_PIPE);
+            if (current_char == '>' and next_char == '>') return self.emit_double(Token.DOUBLE_GTHAN);
+            if (current_char == '>' and next_char == '&') return self.emit_double(Token.GTHAN_AMP);
+            if (current_char == '<' and next_char == '&') return self.emit_double(Token.LTHAN_AMP);
+            if (current_char == '<' and next_char == '<') return self.emit_double(Token.DOUBLE_LTHAN);
+        }
+
+        // Single char symbols.
         if (current_char == '#')  return self.emit_single(Token.COMMENT);
         if (current_char == '$')  return self.emit_single(Token.DOLLARS);
         if (current_char == '\\') return self.emit_single(Token.BACKSLASH);

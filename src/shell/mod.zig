@@ -12,7 +12,7 @@ pub const Shell = struct {
     }
 
     pub fn t(self: *const Shell) !void {
-        var lexer = Lexer.init("echo \"hello world\" 'hi'", self.alloc);
+        var lexer = Lexer.init("hello-foo --bar --xd--foo -bar-bar", self.alloc);
         const tokens = try lexer.lex();
 
         for (tokens) |token| {
