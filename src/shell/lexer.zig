@@ -18,15 +18,9 @@ pub const TokenType = enum {
     CLOSE_BRACKET,      // ]
     SEMI,               // ;
     AMP,                // &
-    DOUBLE_AMP,         // &&
     PIPE,               // |
-    DOUBLE_PIPE,        // ||
-    REDIRECT_OUT,       // >
-    REDIRECT_APPEND,    // >>
-    REDIRECT_OUT_FD,    // >&
-    REDIRECT_IN,        // <
-    REDIRECT_IN_FD,     // <&
-    HEREDOC,            // <<
+    GTHAN,              // >
+    LTHAN,              // <
 };
 
 pub const Token = union(TokenType) {
@@ -47,15 +41,9 @@ pub const Token = union(TokenType) {
     CLOSE_BRACKET,
     SEMI,
     AMP,
-    DOUBLE_AMP,
     PIPE,
-    DOUBLE_PIPE,
-    REDIRECT_OUT,
-    REDIRECT_APPEND,
-    REDIRECT_OUT_FD,
-    REDIRECT_IN,
-    REDIRECT_IN_FD,
-    HEREDOC,
+    GTHAN,
+    LTHAN,
 };
 
 pub const LexerError = error {
@@ -66,12 +54,14 @@ pub const LexerError = error {
 
 pub const Lexer = struct {
     source: []const u8,
+    start: usize,
     cursor: usize,
     alloc: std.mem.Allocator,
 
     pub fn init(source: []const u8, alloc: std.mem.Allocator) Lexer {
         return .{
             .source = source,
+            .start = 0,
             .cursor = 0,
             .alloc = alloc
         };
@@ -92,11 +82,13 @@ pub const Lexer = struct {
 
             // Checks for identifiers.
             if (
-                (!std.ascii.isDigit(current_char) and // Start of the identifier should not start as a number.
-                 current_char != '-' and // Start of the identifier should not start with (-).
-                 current_char != '.' and // Start of the identifier should not start with (.).
-                self.is_identifier(current_char)) or // If alpha numeric.
-                current_char == '_' // Can start with _.
+                (
+                 current_char != '-' and                // Cannot start with `-`.
+                 current_char != '.' and                // Cannot start with `.`
+                 !std.ascii.isDigit(current_char) and   // Cannot start with a number.
+                 self.is_identifier(current_char)       // Check if is alpha numeric.
+                ) or
+                current_char == '_'                     // Can start with `_`.
             ) {
                 const identifier = try self.lex_identifier();
                 try tokens.append(identifier);
@@ -134,46 +126,45 @@ pub const Lexer = struct {
 
     /// Lex identifiers.
     fn lex_identifier(self: *Lexer) LexerError!Token {
-        var buffer = std.ArrayList(u8).init(self.alloc);
-        defer buffer.deinit();
+        self.start_cursor();
 
         while (self.has_next()) {
             const buffer_char = self.get_current_char();
             if (!self.is_identifier(buffer_char)) break;
 
-            try buffer.append(buffer_char);
             self.advance();
         }
 
-        const token = Token { .IDENTIFIER = buffer.items };
+        const identifier = self.source[self.start..self.cursor];
+        const token = Token { .IDENTIFIER = identifier };
+
         return token;
     }
 
     /// Lex flags.
     fn lex_flag(self: *Lexer) LexerError!Token {
-        var buffer = std.ArrayList(u8).init(self.alloc);
-        defer buffer.deinit();
+        self.start_cursor();
 
         while (self.has_next()) {
             const buffer_char = self.get_current_char();
             if (buffer_char != '-' and !self.is_identifier(buffer_char)) break;
 
-            try buffer.append(buffer_char);
             self.advance();
         }
 
-        const token = Token { .FLAG = buffer.items };
+        const flag = self.source[self.start..self.cursor];
+        const token = Token { .FLAG = flag };
+
         return token;
     }
 
     /// Lex string literals.
     fn lex_string_literal(self: *Lexer) LexerError!Token {
-        var buffer = std.ArrayList(u8).init(self.alloc);
-        defer buffer.deinit();
-
         // Gets the string delimiter can be ' or ".
         const delimiter = self.get_current_char();
         self.advance(); // advance for the delimiter.
+
+        self.start_cursor();
 
         // A marker if the delimiter has been closed.
         var delimiter_closed = false;
@@ -182,15 +173,12 @@ pub const Lexer = struct {
             const buffer_char = self.get_current_char();
 
             // If the current buffer_char is the same as the delimiter,
-            // advance and break and also set the delimiter marker that its has been closed.
+            // break and also set the delimiter marker that its has been closed.
             if (buffer_char == delimiter) {
-                self.advance();
                 delimiter_closed = true;
-
                 break;
             }
 
-            try buffer.append(buffer_char);
             self.advance();
         }
 
@@ -199,27 +187,30 @@ pub const Lexer = struct {
             return LexerError.DELIMITER_NOT_CLOSED;
         }
 
-        const token = Token { .STRING_LITERAL = buffer.items };
+        const string_literal = self.source[self.start..self.cursor];
+        const token = Token { .STRING_LITERAL = string_literal };
+
+        self.advance(); // advance for the ending delimiter.
+
         return token;
     }
 
     /// Lex number literals.
     fn lex_number_literal(self: *Lexer) LexerError!Token {
-        var buffer = std.ArrayList(u8).init(self.alloc);
-        defer buffer.deinit();
+        self.start_cursor();
 
         while (self.has_next()) {
             const buffer_char = self.get_current_char();
             if (!std.ascii.isDigit(buffer_char)) break;
 
-            try buffer.append(buffer_char);
             self.advance();
         }
 
         // Parse the buffer first into i64.
-        const number = try std.fmt.parseInt(i64, buffer.items, 10);
-
+        const number_literal = self.source[self.start..self.cursor];
+        const number = try std.fmt.parseInt(i64, number_literal, 10);
         const token = Token { .NUMBER_LITERAL = number };
+
         return token;
     }
 
@@ -227,17 +218,6 @@ pub const Lexer = struct {
     fn lex_symbol(self: *Lexer) LexerError!Token {
         const current_char = self.get_current_char();
 
-        // Double char symbols.
-        if (self.peek()) |next_char| {
-            if (current_char == '&' and next_char == '&') return self.emit_double(Token.DOUBLE_AMP);
-            if (current_char == '|' and next_char == '|') return self.emit_double(Token.DOUBLE_PIPE);
-            if (current_char == '>' and next_char == '>') return self.emit_double(Token.REDIRECT_APPEND);
-            if (current_char == '>' and next_char == '&') return self.emit_double(Token.REDIRECT_OUT_FD);
-            if (current_char == '<' and next_char == '&') return self.emit_double(Token.REDIRECT_IN_FD);
-            if (current_char == '<' and next_char == '<') return self.emit_double(Token.HEREDOC);
-        }
-
-        // Single char symbols.
         if (current_char == '#')  return self.emit_single(Token.COMMENT);
         if (current_char == '$')  return self.emit_single(Token.DOLLARS);
         if (current_char == '\\') return self.emit_single(Token.BACKSLASH);
@@ -251,8 +231,8 @@ pub const Lexer = struct {
         if (current_char == ';')  return self.emit_single(Token.SEMI);
         if (current_char == '&')  return self.emit_single(Token.AMP);
         if (current_char == '|')  return self.emit_single(Token.PIPE);
-        if (current_char == '>')  return self.emit_single(Token.REDIRECT_OUT);
-        if (current_char == '<')  return self.emit_single(Token.REDIRECT_IN);
+        if (current_char == '>')  return self.emit_single(Token.GTHAN);
+        if (current_char == '<')  return self.emit_single(Token.LTHAN);
 
         return LexerError.UNKNOWN_SYMBOL;
     }
@@ -290,6 +270,11 @@ pub const Lexer = struct {
     /// Checks if there is still a next char.
     fn has_next(self: *Lexer) bool {
         return self.cursor < self.source.len;
+    }
+
+    /// Sets the self.start to the cursor.
+    fn start_cursor(self: *Lexer) void {
+        self.start = self.cursor;
     }
 
     /// Advance the cursor.
