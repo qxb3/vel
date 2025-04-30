@@ -1,13 +1,13 @@
 const std = @import("std");
 
 pub const TokenType = enum {
-    IDENTIFIER,         // words, commands, any non number starting alphanumeric stuff.
-    FLAG,               // -foo or --bar.
+    WORD,               // words, commands, flags, path, any non number starting alphanumeric stuff.
     STRING_LITERAL,     // "string" or 'string'.
     NUMBER_LITERAL,     // 12345.
 
     COMMENT,            // #
     DOLLARS,            // $
+    HOME_EXPAND,        // ~
     BACKSLASH,          // \
     EQUALS,             // =
     OPEN_PAREN,         // (
@@ -30,13 +30,13 @@ pub const TokenType = enum {
 };
 
 pub const Token = union(TokenType) {
-    IDENTIFIER: []const u8,
-    FLAG: []const u8,
+    WORD: []const u8,
     STRING_LITERAL: []const u8,
     NUMBER_LITERAL: i64,
 
     COMMENT,
     DOLLARS,
+    HOME_EXPAND,
     BACKSLASH,
     EQUALS,
     OPEN_PAREN,
@@ -92,21 +92,13 @@ pub const Lexer = struct {
                 continue;
             }
 
-            // Checks for identifiers.
+            // Checks for words.
             if (
-                current_char != '-' and                // Cannot start with `-`.
                 !std.ascii.isDigit(current_char) and   // Cannot start with a number.
                 self.is_identifier(current_char)       // Check if is alpha numeric.
             ) {
-                const identifier = try self.lex_identifier();
+                const identifier = try self.lex_word();
                 try tokens.append(identifier);
-                continue;
-            }
-
-            // Checks for flags.
-            if (current_char == '-') {
-                const flag = try self.lex_flag();
-                try tokens.append(flag);
                 continue;
             }
 
@@ -133,7 +125,7 @@ pub const Lexer = struct {
     }
 
     /// Lex identifiers.
-    fn lex_identifier(self: *Lexer) LexerError!Token {
+    fn lex_word(self: *Lexer) LexerError!Token {
         self.start_cursor();
 
         while (self.has_next()) {
@@ -143,25 +135,8 @@ pub const Lexer = struct {
             self.advance();
         }
 
-        const identifier = self.source[self.start..self.cursor];
-        const token = Token { .IDENTIFIER = identifier };
-
-        return token;
-    }
-
-    /// Lex flags.
-    fn lex_flag(self: *Lexer) LexerError!Token {
-        self.start_cursor();
-
-        while (self.has_next()) {
-            const buffer_char = self.get_current_char();
-            if (!std.ascii.isAlphanumeric(buffer_char) and buffer_char != '-') break;
-
-            self.advance();
-        }
-
-        const flag = self.source[self.start..self.cursor];
-        const token = Token { .FLAG = flag };
+        const word = self.source[self.start..self.cursor];
+        const token = Token { .WORD = word };
 
         return token;
     }
@@ -239,6 +214,7 @@ pub const Lexer = struct {
         // Single char symbols.
         if (current_char == '#')  return self.emit_single(Token.COMMENT);
         if (current_char == '$')  return self.emit_single(Token.DOLLARS);
+        if (current_char == '~')  return self.emit_single(Token.HOME_EXPAND);
         if (current_char == '\\') return self.emit_single(Token.BACKSLASH);
         if (current_char == '=')  return self.emit_single(Token.EQUALS);
         if (current_char == '(')  return self.emit_single(Token.OPEN_PAREN);
@@ -309,7 +285,8 @@ pub const Lexer = struct {
             std.ascii.isAlphanumeric(char) or
             char == '_' or
             char == '-' or
-            char == '.'
+            char == '.' or
+            char == '/'
         );
     }
 };
