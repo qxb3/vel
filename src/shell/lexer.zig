@@ -81,7 +81,6 @@ pub const Lexer = struct {
 
     pub fn lex(self: *Lexer) LexerError![]Token {
         var tokens = std.ArrayList(Token).init(self.alloc);
-        defer tokens.deinit();
 
         while (self.has_next()) {
             const current_char = self.get_current_char();
@@ -288,5 +287,10 @@ pub const Lexer = struct {
             char == '.' or
             char == '/'
         );
+    }
+
+    pub fn deinit(self: *Lexer) void {
+        self.alloc.free(self.source);
+        self.alloc.free(self.source);
     }
 };
